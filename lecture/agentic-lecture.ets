@@ -13,48 +13,75 @@
  * limitations under the License.
  */
 
-import { Color, IconColorLayer, SvgIcons } from "arktsx.ui"
-import { DeckConfig, runDataDeck } from "../lib/index"
+import { memo } from "arkui.incremental.runtime.annotations"
+import { RepeatByArray } from "arkui.incremental.runtime"
+import { FontStyle } from "arktsx.graphics"
+import {
+    Alignment,
+    Color,
+    Column,
+    Container,
+    HorizontalAlignment,
+    IconByPathSVG,
+    indents,
+    RoundedCorners,
+    Row,
+    SizePolicy,
+    stroke,
+    SvgIcons,
+    Text,
+    TextAlignment,
+    VerticalAlignment,
+} from "arktsx.ui"
+import {
+    Callout,
+    CellMark,
+    CellMarkKind,
+    CheckMatrix,
+    Code,
+    Columns,
+    ComparePanels,
+    currentSlideTheme,
+    deckOf,
+    Diagram,
+    DiagramFigure,
+    DENSE_DENSITY,
+    LIGHT_THEME,
+    MIDNIGHT_THEME,
+    PresoBackgroundKind,
+    PresentationOptions,
+    PresoDeck,
+    ProvideSlideTheme,
+    PyramidStack,
+    RevealGroup,
+    runPresentationCli,
+    SectionDivider,
+    SlideHeader,
+    slideOf,
+    SLIDE_WIDE,
+    SlideTransitionKind,
+    SlideFrame,
+    SlideImage,
+    SlideTheme,
+    StatusBoard,
+    TableSlide,
+    themeWithDensity,
+    toneAccentInk,
+    toneBorder,
+    toneFill,
+} from "../lib/index"
 
 // Lecture "Agentic development" for 1st–2nd year students.
 // General principles of fast, stable agentic development:
 // a short feedback loop, echeloned safety, a high cadence.
-
-// Multi-color icons for the three pillars (teal · violet · amber).
-const TEAL: Color = Color.rgb(0x0d, 0x94, 0x88)
-const VIOLET: Color = Color.rgb(0x6d, 0x4a, 0xff)
-const AMBER: Color = Color.rgb(0xd9, 0x77, 0x06)
-const TOOLS_ICON: Array<IconColorLayer> = [{ path: SvgIcons.Settings, color: TEAL }]
-const PRINCIPLES_ICON: Array<IconColorLayer> = [{ path: SvgIcons.Shield, color: VIOLET }]
-const PROCESSES_ICON: Array<IconColorLayer> = [{ path: SvgIcons.Clock, color: AMBER }]
+//
+// This is a code deck (not `deckFromData`) on purpose: the argument needs the
+// composition primitives the data path cannot reach — a judged A/B pair
+// (`ComparePanels`), width-weighted columns (`Columns`), a grouped outline, and
+// the pattern families' figures (`CheckMatrix`, `PyramidStack`, `StatusBoard`).
 
 // ── Diagrams (mermaid) ──────────────────────────────────────────────────────
 
-// Cheapest-first: each layer catches what the one above it cannot see, and the
-// cost of a mistake grows as the error travels down. Four layers, not five:
-// the repo's own stack lists the memo dependency graph as layer 2, which is
-// framework-specific and out of scope for this lecture.
-const DIAGRAM_DEFENSE: string = `flowchart LR
-  E["Ошибка агента"] --> L1["1 · Типы"]
-  L1 --> L2["2 · Валидация"]
-  L2 --> L3["3 · Сверка отрисовки"]
-  L3 --> L4["4 · Среда выполнения"]
-  icon E Error
-  icon L1 Check
-  icon L2 Shield
-  icon L3 Eye
-  icon L4 Power
-  classDef ok fill:#d7f0dd,stroke:#16a34a
-  classDef teal fill:#cdf0ec,stroke:#0d9488
-  classDef blue fill:#dbe7fb,stroke:#1f6feb
-  classDef violet fill:#e7e2fd,stroke:#6d4aff
-  class L1 ok
-  class L2 teal
-  class L3 blue
-  class L4 violet`
-
-// The agent loop, drawn as a loop: the module routes the back edge onto its own
-// lane, so a cycle reads as a cycle rather than as a straight pipeline.
 const DIAGRAM_LOOP: string = `flowchart LR
   A["код"] --> B["сборка"]
   B --> C["запуск"]
@@ -64,480 +91,1061 @@ const DIAGRAM_LOOP: string = `flowchart LR
   classDef stage fill:#e8effc,stroke:#2563eb,stroke-width:1px,color:#161a22
   class A,B,C,D,E stage`
 
+const DIAGRAM_CONVERGENCE: string = `flowchart LR
+  S1["5 ошибок"] -- правка --> S2["2 ошибки"]
+  S2 -- правка --> S3["1 ошибка"]
+  S3 -- правка --> S4["0 — готово"]
+  classDef bad fill:#fde2e1,stroke:#dc2626,color:#161a22
+  classDef mid fill:#fdeccb,stroke:#d97706,color:#161a22
+  classDef ok fill:#d7f0dd,stroke:#16a34a,color:#161a22
+  class S1 bad
+  class S2,S3 mid
+  class S4 ok`
+
+const REJECTED: CellMark = { kind: CellMarkKind.Tick, on: false, tone: "danger" }
+const ACCEPTED: CellMark = { kind: CellMarkKind.Tick, on: true, tone: "ok" }
+
+// ── Shared text and card helpers ────────────────────────────────────────────
+
+function sizeOf(role: string, theme: SlideTheme): int {
+    switch (role) {
+        case "display": return theme.displaySize
+        case "title": return theme.titleSize
+        case "subtitle": return theme.subtitleSize
+        case "caption": return theme.captionSize
+        default: return theme.bodySize
+    }
+}
+
+function inkOf(role: string, theme: SlideTheme): Color {
+    switch (role) {
+        case "secondary": return theme.textSecondary
+        case "accent": return theme.accent
+        default: return theme.textPrimary
+    }
+}
+
+@memo
+function Txt(value: string, role: string = "body", tone: string = "primary"): void {
+    const theme = currentSlideTheme()
+    Text(value, {
+        fontSize: sizeOf(role, theme),
+        color: inkOf(tone, theme),
+        fontFamily: theme.fontFamily,
+        widthPolicy: SizePolicy.Stretched,
+        textAlign: TextAlignment.Start,
+    })
+}
+
+/**
+ * A tonal card: a round mark (badge or icon), a bold title, then fixed lines.
+ * Data-only on purpose — the memo transform cannot take a content lambda as a
+ * positional argument of a struct with `@memo` fields.
+ */
+@memo
+function InfoCard2(
+    title: string,
+    tone: string,
+    lines: Array<string>,
+    icon: string = "",
+    badge: string = "",
+    image: string = "",
+    imageSize: int = 0,
+    fillHeight: boolean = false,
+): void {
+    const theme = currentSlideTheme()
+    const tinted: boolean = tone != ""
+    const markTone: string = tinted ? tone : "accent"
+    Container({
+        backgroundColor: tinted ? toneFill(tone, theme) : theme.surface,
+        stroke: stroke(1, tinted ? toneBorder(tone, theme) : theme.surfaceBorder),
+        corners: RoundedCorners.dp(theme.radius),
+        padding: indents(theme.gap),
+        heightPolicy: fillHeight ? SizePolicy.Stretched : SizePolicy.Wrapped,
+        widthPolicy: SizePolicy.Stretched,
+    }) {
+        Column({
+            contentGap: 10,
+            heightPolicy: fillHeight ? SizePolicy.Stretched : SizePolicy.Wrapped,
+            widthPolicy: SizePolicy.Stretched,
+            contentHorizontalAlignment: HorizontalAlignment.Start,
+        }) {
+            Row({
+                contentGap: 10,
+                verticalAlignment: VerticalAlignment.Center,
+                heightPolicy: SizePolicy.Wrapped,
+                widthPolicy: SizePolicy.Stretched,
+            }) {
+                if (badge != "") {
+                    Container({
+                        width: 30, height: 30,
+                        corners: RoundedCorners.dp(999),
+                        backgroundColor: toneAccentInk(markTone, theme),
+                        alignment: Alignment.Center,
+                    }) {
+                        Text(badge, {
+                            fontSize: theme.captionSize,
+                            color: theme.onAccent,
+                            fontFamily: theme.fontFamily,
+                            fontStyle: FontStyle.BOLD,
+                        })
+                    }
+                } else if (icon != "") {
+                    IconByPathSVG(22, icon, { foreground: toneAccentInk(markTone, theme) })
+                }
+                if (title != "") {
+                    Text(title, {
+                        fontSize: theme.subtitleSize,
+                        color: theme.textPrimary,
+                        fontFamily: theme.fontFamily,
+                        fontStyle: FontStyle.BOLD,
+                        textAlign: TextAlignment.Start,
+                        widthPolicy: SizePolicy.Stretched,
+                    })
+                }
+            }
+            if (image != "" && imageSize > 0) {
+                SlideImage(image, imageSize, imageSize, 12)
+            }
+            RepeatByArray(lines, (line: string, index: int): int => index,
+                (line: string, index: int): void => {
+                    Text(line, {
+                        fontSize: theme.captionSize,
+                        color: theme.textSecondary,
+                        fontFamily: theme.fontFamily,
+                        widthPolicy: SizePolicy.Stretched,
+                        textAlign: TextAlignment.Start,
+                    })
+                })
+        }
+    }
+}
+
+@memo
+function BulletColumn(items: Array<string>): void {
+    const theme = currentSlideTheme()
+    Column({ contentGap: 10, heightPolicy: SizePolicy.Wrapped }) {
+        RepeatByArray(items, (item: string, index: int): int => index,
+            (item: string, index: int): void => {
+                Row({
+                    contentGap: 10,
+                    verticalAlignment: VerticalAlignment.Top,
+                    heightPolicy: SizePolicy.Wrapped,
+                }) {
+                    Container({
+                        width: 8, height: 8,
+                        corners: RoundedCorners.dp(999),
+                        backgroundColor: theme.accent,
+                    }) {}
+                    Text(item, {
+                        fontSize: theme.bodySize,
+                        color: theme.textPrimary,
+                        fontFamily: theme.fontFamily,
+                        widthPolicy: SizePolicy.Stretched,
+                    })
+                }
+            })
+    }
+}
+
+// ── Content blocks ──────────────────────────────────────────────────────────
+
+@memo
+function LoopText(): void {
+    BulletColumn([
+        "Пишет: сотни строк кода за секунды",
+        "Запускает: компилирует и выполняет сам",
+        "Смотрит: видит результат, а не только код",
+        "Повторяет: правит и запускает снова",
+    ])
+}
+
+@memo
+function LoopArt(): void {
+    SlideImage("demo/assets/lecture-1/07-fastcycle.jpg", 400, 260, 16)
+}
+
+@memo
+function PillarTools(): void {
+    InfoCard2("Инструменты", "accent", ["язык, компилятор, среда", "дают скорость"],
+        SvgIcons.Settings, "", "demo/assets/lecture-1/02-tools.jpg", 124)
+}
+
+@memo
+function PillarPrinciples(): void {
+    InfoCard2("Принципы", "alt", ["стандарты и соглашения", "дают стабильность"],
+        SvgIcons.Shield, "", "demo/assets/lecture-1/03-principles.jpg", 124)
+}
+
+@memo
+function PillarProcesses(): void {
+    InfoCard2("Процессы", "warn", ["документация, знания", "дают темп"],
+        SvgIcons.Clock, "", "demo/assets/lecture-1/04-processes.jpg", 124)
+}
+
+@memo
+function DifficultyCost(): void {
+    InfoCard2("Дорогая проверка", "danger", [
+        "проверка — второй билет: стоит столько же, сколько генерация",
+        "поэтому важна частота циклов, а не размер шага",
+    ], SvgIcons.Clock, "", "", 0, true)
+}
+
+@memo
+function DifficultyProbability(): void {
+    InfoCard2("Вероятностные ошибки", "danger", [
+        "каждая строка — монетка: может быть неверной",
+        "надёжность даёт не модель, а слои проверки",
+    ], SvgIcons.Error, "", "", 0, true)
+}
+
+@memo
+function DifficultyForgetting(): void {
+    InfoCard2("Забывание", "danger", [
+        "контекст — оперативка без диска",
+        "знания надо выносить в файлы и заметки",
+    ], SvgIcons.Info, "", "", 0, true)
+}
+
+@memo
+function CycleDiagram(): void {
+    Container({ height: 220, widthPolicy: SizePolicy.Stretched }) {
+        Diagram(DIAGRAM_LOOP)
+    }
+}
+
+@memo
+function CycleArt(): void {
+    SlideImage("demo/assets/lecture-1/07-fastcycle.jpg", 320, 236, 16)
+}
+
+@memo
+function QuestionA(): void {
+    InfoCard2("Написать код", "accent", [
+        "быстро выдать рабочую версию",
+        "модель видела миллионы примеров",
+        "ошибку видно сразу: код не компилируется",
+    ], SvgIcons.LightningBolt, "A", "", 0, true)
+}
+
+@memo
+function QuestionB(): void {
+    InfoCard2("Понять, что именно нужно", "alt", [
+        "уточнить требования и границы",
+        "решить, что считается правильным",
+        "ошибку не видно: код работает, но не то",
+    ], SvgIcons.Eye, "B", "", 0, true)
+}
+
+@memo
+function AnswerA(): void {
+    InfoCard2("Код виден", "alt", [
+        "компилятор скажет, что не так",
+        "ошибка приходит быстро и на месте",
+    ], SvgIcons.Eye, "", "", 0, true)
+}
+
+@memo
+function AnswerB(): void {
+    InfoCard2("Задача невидима", "ok", [
+        "код работает, но не то",
+        "границы и критерии готовности задаёт человек",
+    ], SvgIcons.Check, "", "", 0, true)
+}
+
+@memo
+function ConvergenceText(): void {
+    BulletColumn([
+        "Каждый шаг неидеален — это нормально",
+        "Цель — последовательность, которая сходится",
+        "Конец — когда сигнал перестал меняться",
+        "Управляем циклом: сигнал → правка → сигнал",
+    ])
+}
+
+@memo
+function ConvergenceFigure(): void {
+    const theme = currentSlideTheme()
+    Container({
+        height: 250,
+        widthPolicy: SizePolicy.Stretched,
+        backgroundColor: theme.surface,
+        stroke: stroke(1, theme.surfaceBorder),
+        corners: RoundedCorners.dp(theme.radius),
+        padding: indents(14, 10),
+    }) {
+        DiagramFigure(DIAGRAM_CONVERGENCE, undefined, 1.1f)
+    }
+}
+
+@memo
+function LeversText(): void {
+    Column({ contentGap: 10, heightPolicy: SizePolicy.Wrapped }) {
+        Txt("Короче оборот", "subtitle")
+        BulletColumn(["Сборка за секунды, а не минуты", "Тесты дают сигнал сразу"])
+        Txt("Меньше оборотов", "subtitle")
+        BulletColumn(["Типы ловят ошибку до запуска", "Отладчик даёт факты, а не догадки", "Маленький шаг: ошибка локальна"])
+    }
+}
+
+@memo
+function LeversArt(): void {
+    SlideImage("demo/assets/lecture-1/07-fastcycle.jpg", 380, 284, 16)
+}
+
+@memo
+function ToolsGrid(): void {
+    Column({ contentGap: 14, heightPolicy: SizePolicy.Wrapped }) {
+        Row({ contentGap: 14, heightPolicy: SizePolicy.Wrapped }) {
+            InfoCard2("Язык", "accent", ["статическая типизация"], SvgIcons.Check)
+            InfoCard2("Сборка", "accent", ["секунды, не минуты"], SvgIcons.LightningBolt)
+        }
+        Row({ contentGap: 14, heightPolicy: SizePolicy.Wrapped }) {
+            InfoCard2("Наблюдаемость", "accent", ["отладчик и анализатор"], SvgIcons.Eye)
+            InfoCard2("Библиотеки", "accent", ["UI, сеть, хранение"], SvgIcons.Star)
+        }
+    }
+}
+
+@memo
+function ToolsArt(): void {
+    SlideImage("demo/assets/lecture-1/02-tools.jpg", 320, 238, 16)
+}
+
+@memo
+function TypesText(): void {
+    Column({ contentGap: 12, heightPolicy: SizePolicy.Wrapped }) {
+        Code("const n: number = \"текст\"  // ✗\nconst n: number = 42       // ✓", "ArkTS")
+        BulletColumn([
+            "Агенту не нужно запускать код, чтобы узнать о неверном типе",
+            "Ошибка приходит за секунды и там, где она сделана",
+        ])
+    }
+}
+
+@memo
+function TypesArt(): void {
+    SlideImage("demo/assets/lecture-1/06-types.jpg", 320, 238, 16)
+}
+
+@memo
+function EyesText(): void {
+    BulletColumn([
+        "Видит отрисованный результат, а не только код",
+        "Ходит по дереву интерфейса и кликает",
+        "Сравнивает с ожидаемым состоянием",
+    ])
+}
+
+@memo
+function EyesArt(): void {
+    SlideImage("demo/assets/lecture-1/09-inspect.jpg", 340, 254, 16)
+}
+
+@memo
+function GuardRepo(): void {
+    InfoCard2("Никогда: репозиторий", "danger", [
+        "публикация в публичный реестр",
+        "перезапись истории",
+        "необратимое удаление файлов",
+    ], SvgIcons.Shield, "", "", 0, true)
+}
+
+@memo
+function GuardAccess(): void {
+    InfoCard2("Никогда: доступы", "danger", [
+        "запуск чужого кода с правами",
+        "правка секретов и ключей",
+        "«добавить всё» одной командой",
+    ], SvgIcons.Lock, "", "", 0, true)
+}
+
+@memo
+function GuardAsk(): void {
+    InfoCard2("Только по просьбе", "warn", [
+        "публикация артефактов",
+        "массовая очистка репозитория",
+        "изменение конфигурации CI",
+    ], SvgIcons.Bell, "", "", 0, true)
+}
+
+@memo
+function TestsText(): void {
+    BulletColumn([
+        "Тесты пишутся вместе с функцией, а не после",
+        "Граничные случаи — там, где живут ошибки",
+        "Пирамида: много быстрых юнит-тестов, меньше интеграционных, единицы end-to-end",
+        "Тест обязан падать до правки и проходить после",
+        "CI: установка, сборка и тесты на каждом коммите",
+    ])
+}
+
+@memo
+function TestsArt(): void {
+    SlideImage("demo/assets/lecture-1/10-tests.jpg", 340, 254, 16)
+}
+
+@memo
+function BadTestBody(): void {
+    Code("test(\"сложение\", () => {\n  print(\"ок\")\n})", "ArkTS")
+}
+
+@memo
+function GoodTestBody(): void {
+    Code("test(\"сложение\", () => {\n  assert(sum(2, 2) == 4)\n})", "ArkTS")
+}
+
+@memo
+function PipelineGrid(): void {
+    Column({ contentGap: 14, heightPolicy: SizePolicy.Wrapped }) {
+        Row({ contentGap: 14, heightPolicy: SizePolicy.Wrapped }) {
+            InfoCard2("Упало", "danger", ["лог, шаг, первая ошибка"], "", "1")
+            InfoCard2("Понять", "warn", ["воспроизвести локально"], "", "2")
+        }
+        Row({ contentGap: 14, heightPolicy: SizePolicy.Wrapped }) {
+            InfoCard2("Починить", "warn", ["правкой в репозитории"], "", "3")
+            InfoCard2("Перезапустить", "ok", ["зелёный не случаен?"], "", "4")
+        }
+    }
+}
+
+@memo
+function PipelineArt(): void {
+    SlideImage("demo/assets/lecture-1/16-pipeline.jpg", 320, 238, 16)
+}
+
+@memo
+function ReviewText(): void {
+    BulletColumn([
+        "Четыре роли: архитектура, безопасность, скорость, соглашения",
+        "У каждого свой чек-лист рядом с определением",
+        "Ревью ловит то, чего не видит CI: замысел, границы, последствия",
+        "Одобряет человек: иначе проверка сертифицирует сама себя",
+    ])
+}
+
+@memo
+function ReviewArt(): void {
+    SlideImage("demo/assets/lecture-1/11-review.jpg", 340, 254, 16)
+}
+
+@memo
+function KnowledgeText(): void {
+    BulletColumn([
+        "«Почему» и «как связано» — рядом с кодом",
+        "Заметки живут между сессиями агента",
+        "Правила и заметки — вход агента, а не отчёт для людей",
+        "Устаревшая заметка хуже отсутствующей",
+        "Обновляется вместе с изменением, а не после",
+    ])
+}
+
+@memo
+function KnowledgeArt(): void {
+    SlideImage("demo/assets/lecture-1/12-knowledge.jpg", 340, 254, 16)
+}
+
+@memo
+function StackText(): void {
+    Column({ contentGap: 12, heightPolicy: SizePolicy.Wrapped }) {
+        Txt("Что даёт агенту дружелюбный инструментарий", "subtitle")
+        BulletColumn([
+            "Компиляция и запуск — секунды, не минуты",
+            "Статические типы ловят ошибку до запуска",
+            "Тесты без экрана и «глаза» на интерфейс",
+            "Внешняя память: правила и заметки рядом с кодом",
+        ])
+    }
+}
+
+@memo
+function StackArt(): void {
+    const theme = currentSlideTheme()
+    Container({
+        backgroundColor: toneFill("accent", theme),
+        stroke: stroke(1, toneBorder("accent", theme)),
+        corners: RoundedCorners.dp(theme.radius),
+        padding: indents(theme.gap),
+        heightPolicy: SizePolicy.Wrapped,
+    }) {
+        Column({ contentGap: 10, heightPolicy: SizePolicy.Wrapped }) {
+            Txt("Пример стека", "subtitle")
+            SlideImage("demo/arkui3-qr.png", 150, 150, 8)
+            Txt("gitcode.com/rri_opensource/arkui3", "caption", "accent")
+        }
+    }
+}
+
+@memo
+function ChecklistTop(): void {
+    Row({ contentGap: 16, heightPolicy: SizePolicy.Wrapped }) {
+        InfoCard2("Правила", "accent", ["файл, который агент читает до работы"], SvgIcons.Lock)
+        InfoCard2("Короткий цикл", "accent", ["компиляция и проверка за секунды"], SvgIcons.Refresh)
+        InfoCard2("Ранние ошибки", "accent", ["типы и валидация до запуска"], SvgIcons.Shield)
+    }
+}
+
+@memo
+function ChecklistBottom(): void {
+    Row({ contentGap: 16, heightPolicy: SizePolicy.Wrapped }) {
+        InfoCard2("«Глаза»", "ok", ["снимок и дерево вместо слепого кода"], SvgIcons.Eye)
+        InfoCard2("Тесты с кодом", "ok", ["и запуск на каждом коммите"], SvgIcons.Check)
+        InfoCard2("База знаний", "ok", ["«почему» и «как связано»"], SvgIcons.Star)
+    }
+}
+
+@memo
+function ActionRules(): void {
+    InfoCard2("Правила", "accent", [
+        "создайте файл, который агент читает до работы",
+        "границы, запреты, как проверять",
+    ], "", "1")
+}
+
+@memo
+function ActionSignal(): void {
+    InfoCard2("Сигнал", "accent", [
+        "добейтесь сборки и тестов за секунды",
+        "одна команда — и видно результат",
+    ], "", "2")
+}
+
+@memo
+function ActionTest(): void {
+    InfoCard2("Один тест", "ok", [
+        "напишите падающий тест до правки",
+        "затем попросите агента его починить",
+    ], "", "3")
+}
+
+// ── Pages ───────────────────────────────────────────────────────────────────
+
+@memo
+function CoverPage(): void {
+    const theme = currentSlideTheme()
+    Container({ backgroundColor: theme.background, padding: indents(theme.gutter) }) {
+        Row({
+            contentGap: 28,
+            widthPolicy: SizePolicy.Stretched,
+            heightPolicy: SizePolicy.Wrapped,
+            verticalAlignment: VerticalAlignment.Center,
+        }) {
+            Column({
+                contentGap: 12,
+                widthPolicy: SizePolicy.Stretched,
+                heightPolicy: SizePolicy.Wrapped,
+            }) {
+                Txt("Лекция · агентская разработка", "caption", "accent")
+                Text("Как бежать быстро и не сломаться", {
+                    fontSize: theme.displaySize,
+                    color: theme.textPrimary,
+                    fontFamily: theme.fontFamily,
+                    fontStyle: FontStyle.BOLD,
+                })
+                Txt("— Николай Иготти", "subtitle")
+            }
+            SlideImage("demo/assets/lecture-1/01-cover.jpg", 400, 298, 16)
+        }
+    }
+}
+
+@memo
+function RoutePage(): void {
+    SlideFrame("Четыре остановки", RouteBody, "Маршрут")
+}
+
+@memo
+function RouteBody(): void {
+    Column({ contentGap: 18, heightPolicy: SizePolicy.Wrapped }) {
+        Row({ contentGap: 18, heightPolicy: SizePolicy.Wrapped }) {
+            InfoCard2("Что такое агент", "accent", ["цикл, а не автодополнение"], SvgIcons.Refresh, "1")
+            InfoCard2("Три столпа", "accent", ["инструменты, принципы, процессы"], SvgIcons.Settings, "2")
+        }
+        Row({ contentGap: 18, heightPolicy: SizePolicy.Wrapped }) {
+            InfoCard2("Где цикл ломается", "warn", ["четыре режима отказа"], SvgIcons.Error, "3")
+            InfoCard2("Что сделать", "ok", ["три действия в свой проект"], SvgIcons.Check, "4")
+        }
+    }
+    Callout("Скорость даёт цикл, надёжность — проверка. Всё остальное — способы ускорить одно, не испортив другое.", "Одна мысль на выходе")
+}
+
+@memo
+function LoopPage(): void {
+    SlideFrame("Агент — это цикл, не автодополнение", LoopBody, "Что это такое")
+}
+
+@memo
+function LoopBody(): void {
+    Columns([
+        { weight: 7, content: LoopText },
+        { weight: 3, content: LoopArt },
+    ], { gap: 24 })
+    Callout("Термостат, а не нагреватель: измеряет, сравнивает с целью и подкручивает — пока не станет ровно.", "Аналогия")
+}
+
+@memo
+function PillarsPage(): void {
+    SlideFrame("Три составляющих быстрой разработки", PillarsBody, "Организующая рамка")
+}
+
+@memo
+function PillarsBody(): void {
+    RevealGroup(1, [
+        { content: PillarTools },
+        { content: PillarPrinciples },
+        { content: PillarProcesses },
+    ], { horizontal: true, staggerMs: 160 })
+    Callout("Без любого из трёх цикл станет медленным, опасным или хаотичным.", "Все три нужны одновременно")
+}
+
+@memo
+function DifficultiesPage(): void {
+    SlideFrame("Три трудности, которые создаёт агент", DifficultiesBody, "Почему это проблема")
+}
+
+@memo
+function DifficultiesBody(): void {
+    Columns([
+        { weight: 1, content: DifficultyCost },
+        { weight: 1, content: DifficultyProbability },
+        { weight: 1, content: DifficultyForgetting },
+    ], { gap: 16, stretch: true })
+    Callout("Стоимость работы ≈ число оборотов × (генерация + проверка). Дешёвая проверка делает ошибку дешёвой.", "Проверка не бесплатна")
+}
+
+@memo
+function CyclePage(): void {
+    SlideFrame("Главный цикл: секунды, не минуты", CycleBody, "Сердце агентной разработки",
+        "И снова по кругу: один оборот цикла и есть единица работы агента")
+}
+
+@memo
+function CycleBody(): void {
+    Columns([
+        { weight: 6, content: CycleDiagram },
+        { weight: 4, content: CycleArt },
+    ], { gap: 24 })
+    Callout("Не шаг, а оборот: время от правки до сигнала.", "Что оптимизируем")
+}
+
+@memo
+function NumbersPage(): void {
+    TableSlide("Полный круг за секунды",
+        ["Этап", "Время", "Что ограничивает"],
+        [
+            ["Генерация кода", "1–5 с", "инференс модели"],
+            ["Компиляция", "0,5–2 с", "проверка типов"],
+            ["Запуск", "0,2 с", "среда выполнения"],
+            ["Проверка", "0,5 с", "рендер и снимок"],
+            ["Полный цикл", "≈2–8 с", "—"],
+        ],
+        "Цикл по цифрам",
+        "Порядок величин на ноутбуке: важна не точность, а соотношение", 1, [4])
+}
+
+@memo
+function QuestionPage(): void {
+    const theme = currentSlideTheme()
+    Container({ backgroundColor: theme.background, padding: indents(theme.gutter) }) {
+        Column({
+            contentGap: theme.gap * 2,
+            heightPolicy: SizePolicy.Stretched,
+            contentVerticalAlignment: VerticalAlignment.Center,
+        }) {
+            SlideHeader("Что труднее: написать код или понять задачу?", "Вопрос аудитории", "")
+            QuestionBody()
+        }
+    }
+}
+
+@memo
+function QuestionBody(): void {
+    // A bounded band keeps the equal-height cards compact: a stretched page
+    // column would otherwise inflate them to the whole remaining height.
+    Container({ height: 280, widthPolicy: SizePolicy.Stretched }) {
+        Columns([
+            { weight: 1, content: QuestionA },
+            { weight: 1, content: QuestionB },
+        ], { gap: 24, stretch: true })
+    }
+}
+
+@memo
+function AnswerPage(): void {
+    SlideFrame("Понять задачу — дороже, чем написать код", AnswerBody, "Ответ")
+}
+
+@memo
+function AnswerBody(): void {
+    Columns([
+        { weight: 1, content: AnswerA },
+        { weight: 1, content: AnswerB },
+    ], { gap: 24, stretch: true })
+    Callout("Код — это черновик; требования — это ТЗ. Проверять надо ТЗ, а не скорость письма.", "Аналогия")
+}
+
+@memo
+function ConvergencePage(): void {
+    SlideFrame("Сходимость вместо идеального шага", ConvergenceBody, "Как это работает")
+}
+
+@memo
+function ConvergenceBody(): void {
+    Columns([
+        { weight: 5, content: ConvergenceText },
+        { weight: 5, content: ConvergenceFigure },
+    ], { gap: 24 })
+    Callout("Автофокус: линза крутится, пока картинка не станет резкой. Один идеальный поворот не нужен.", "Аналогия")
+}
+
+@memo
+function LeversPage(): void {
+    SlideFrame("Рычаги скорости", LeversBody, "Как ускорить сходимость")
+}
+
+@memo
+function LeversBody(): void {
+    Columns([
+        { weight: 6, content: LeversText },
+        { weight: 4, content: LeversArt },
+    ], { gap: 24 })
+    Callout("Сердцебиение: важнее частота ударов, чем сила одного.", "Аналогия")
+}
+
+@memo
+function FailuresPage(): void {
+    SlideFrame("Когда процесс не сходится", FailuresBody, "Обратная сторона")
+}
+
+@memo
+function FailuresBody(): void {
+    StatusBoard(
+        [
+            { name: "Расходимость", tone: "danger" },
+            { name: "Блуждание", tone: "warn" },
+            { name: "Хаос", tone: "warn" },
+            { name: "Ложная сходимость", tone: "danger" },
+        ],
+        ["Признак", "Лечить"],
+        [
+            { column: 0, row: 0, text: "Ошибка копится незаметно" },
+            { column: 1, row: 0, text: "Каждая итерация оптимизирует своё" },
+            { column: 2, row: 0, text: "Ошибка не локализована" },
+            { column: 3, row: 0, text: "Тест проходит через раз" },
+            { column: 0, row: 1, text: "Короткий автоматический сигнал" },
+            { column: 1, row: 1, text: "Одна цель и критерий готовности" },
+            { column: 2, row: 1, text: "Одна правка — один запуск" },
+            { column: 3, row: 1, text: "Тест должен быть детерминированным" },
+        ],
+        { rowHeight: 104, cardHeight: 40, railShare: "1.2fr" })
+    Callout("Все четыре лечатся процессом, а не более сильной моделью.", "Это не про модель")
+}
+
+@memo
+function ToolsSection(): void {
+    ProvideSlideTheme(MIDNIGHT_THEME) {
+        SectionDivider("1", "Инструменты",
+            "язык · компилятор · среда · отладчик · анализатор · библиотеки",
+            PresoBackgroundKind.None, "", SvgIcons.Settings)
+    }
+}
+
+@memo
+function ToolsPage(): void {
+    SlideFrame("Что ускоряет агента", ToolsBody, "Столп 1 · Инструменты")
+}
+
+@memo
+function ToolsBody(): void {
+    Columns([
+        { weight: 6, content: ToolsGrid },
+        { weight: 4, content: ToolsArt },
+    ], { gap: 24 })
+    Callout("Не «модель умнее», а «ошибка видна быстрее». Хороший инструмент сокращает оборот.", "Инструменты — про скорость сигнала")
+}
+
+@memo
+function TypesPage(): void {
+    SlideFrame("Ошибка видна до запуска", TypesBody, "Инструмент №1")
+}
+
+@memo
+function TypesBody(): void {
+    Columns([
+        { weight: 6, content: TypesText },
+        { weight: 4, content: TypesArt },
+    ], { gap: 24 })
+    Callout("Проверка орфографии — до отправки, не после.")
+}
+
+@memo
+function EyesPage(): void {
+    SlideFrame("«Глаза и руки» агента", EyesBody, "Инструмент №2")
+}
+
+@memo
+function EyesBody(): void {
+    Columns([
+        { weight: 7, content: EyesText },
+        { weight: 3, content: EyesArt },
+    ], { gap: 24 })
+    Callout("Смотреть на код — как читать меню на незнакомом языке. Снимок и дерево — это переводчик.", "Аналогия")
+}
+
+@memo
+function PrinciplesSection(): void {
+    ProvideSlideTheme(MIDNIGHT_THEME) {
+        SectionDivider("2", "Принципы", "стандарты · соглашения · защитные перила",
+            PresoBackgroundKind.None, "", SvgIcons.Shield)
+    }
+}
+
+@memo
+function GuardrailsPage(): void {
+    SlideFrame("Защитные перила", GuardrailsBody, "Столп 2 · Принципы")
+}
+
+@memo
+function GuardrailsBody(): void {
+    Columns([
+        { weight: 1, content: GuardRepo },
+        { weight: 1, content: GuardAccess },
+        { weight: 1, content: GuardAsk },
+    ], { gap: 16, stretch: true })
+    Callout("Они не замедляют движение — они не дают уехать туда, откуда нет возврата.", "Перила делают ошибку обратимой")
+}
+
+@memo
+function SelfCheckPage(): void {
+    SlideFrame("Кто что проверяет перед сдачей", SelfCheckBody, "Принципы · Самопроверка")
+}
+
+@memo
+function SelfCheckBody(): void {
+    const theme = currentSlideTheme()
+    CheckMatrix([
+        { label: "Сборка и типы", ticks: [true, false] },
+        { label: "Тесты и граничные случаи", ticks: [true, true] },
+        { label: "Дифф и посторонние файлы", ticks: [true, true] },
+        { label: "Требования и критерии готовности", ticks: [false, true] },
+        { label: "Секреты, доступы и последствия", ticks: [false, true] },
+    ], {
+        header: ["Проверка", "Агент", "Человек"],
+        rowHeight: 46,
+        labelShare: "3fr",
+        labelFill: toneFill("accent", theme),
+        labelInk: toneAccentInk("accent", theme),
+        headerFill: toneFill("accent", theme),
+        headerInk: toneAccentInk("accent", theme),
+        cellFill: theme.surface,
+        shadedFill: theme.surfaceAlt,
+    })
+    Callout("Машина проверяет видимое; человек — смысл, границы и последствия.", "Разделение труда")
+}
+
+@memo
+function DefensePage(): void {
+    SlideFrame("Эшелонированная оборона", DefenseBody, "Итог принципов",
+        "Чем раньше слой ловит ошибку — тем дешевле исправление")
+}
+
+@memo
+function DefenseBody(): void {
+    PyramidStack([
+        { label: "4 · Среда выполнения", caption: "дорого, ловит мало", tone: "danger" },
+        { label: "3 · Сверка отрисовки", caption: "видно, что получилось", tone: "warn" },
+        { label: "2 · Валидация", caption: "данные и границы", tone: "info" },
+        { label: "1 · Типы", caption: "дёшево, ловит больше всего", tone: "ok" },
+    ], { rowHeight: 48, apexShare: 0.42, soft: true })
+    Callout("Каждая проверка ловит то, что пропустила предыдущая; ошибка дорожает вглубь.", "Аналогия: досмотр в аэропорту")
+}
+
+@memo
+function ProcessesSection(): void {
+    ProvideSlideTheme(MIDNIGHT_THEME) {
+        SectionDivider("3", "Процессы", "документация · ревью · CI · тесты · база знаний",
+            PresoBackgroundKind.None, "", SvgIcons.Clock)
+    }
+}
+
+@memo
+function TestsPage(): void {
+    SlideFrame("Тесты и CI: предсказуемый агент", TestsBody, "Процессы · Тесты")
+}
+
+@memo
+function TestsBody(): void {
+    Columns([
+        { weight: 7, content: TestsText },
+        { weight: 3, content: TestsArt },
+    ], { gap: 24 })
+    Callout("Тест — датчик дыма, CI — ночной сторож: срабатывают без вас и не устают к третьему часу ночи.", "Аналогия")
+}
+
+@memo
+function GreenPage(): void {
+    SlideFrame("Зелёный сигнал должен что-то значить", GreenBody, "Процессы · Сигнал")
+}
+
+@memo
+function GreenBody(): void {
+    ComparePanels([
+        { label: "Плохо: тест без проверки", content: BadTestBody, verdict: REJECTED },
+        { label: "Хорошо: тест утверждает", content: GoodTestBody, verdict: ACCEPTED },
+    ])
+    Callout("Тест без assert — датчик, отключённый от провода.", "Аналогия")
+}
+
+@memo
+function PipelinePage(): void {
+    SlideFrame("Красный пайплайн — это задача", PipelineBody, "Процессы · CI")
+}
+
+@memo
+function PipelineBody(): void {
+    Columns([
+        { weight: 6, content: PipelineGrid },
+        { weight: 4, content: PipelineArt },
+    ], { gap: 24 })
+    Callout("Красный пайплайн — письмо от ночного сторожа. Чинить причину, а не перезапускать до зелёного.", "Не «перезапустить», а прочитать")
+}
+
+@memo
+function ReviewPage(): void {
+    SlideFrame("Ревью: независимые взгляды", ReviewBody, "Процессы · Ревью")
+}
+
+@memo
+function ReviewBody(): void {
+    Columns([
+        { weight: 7, content: ReviewText },
+        { weight: 3, content: ReviewArt },
+    ], { gap: 24 })
+    Callout("Второй пилот в кабине: не потому что первый хуже, а потому что один взгляд устаёт и привыкает.", "Аналогия")
+}
+
+@memo
+function KnowledgePage(): void {
+    SlideFrame("База знаний и память агента", KnowledgeBody, "Процессы · Знание")
+}
+
+@memo
+function KnowledgeBody(): void {
+    Columns([
+        { weight: 7, content: KnowledgeText },
+        { weight: 3, content: KnowledgeArt },
+    ], { gap: 24 })
+    Callout("Контекст — оперативная память, заметки — диск. Что не записано, теряется при первой же перезагрузке.", "Аналогия")
+}
+
+@memo
+function StackPage(): void {
+    SlideFrame("Один конкретный стек как иллюстрация", StackBody, "Пример · Как это выглядит")
+}
+
+@memo
+function StackBody(): void {
+    Columns([
+        { weight: 7, content: StackText },
+        { weight: 3, content: StackArt },
+    ], { gap: 24 })
+    Callout("Те же свойства собираются из других инструментов.", "Берите свойства, а не бренд")
+}
+
+@memo
+function ChecklistPage(): void {
+    SlideFrame("Чек-лист агентной разработки", ChecklistBody, "Что взять с собой",
+        "Что не проверяется машиной — того не существует")
+}
+
+@memo
+function ChecklistBody(): void {
+    ChecklistTop()
+    ChecklistBottom()
+}
+
+@memo
+function ActionsPage(): void {
+    SlideFrame("Три действия в свой проект", ActionsBody, "Что сделать на этой неделе")
+}
+
+@memo
+function ActionsBody(): void {
+    Columns([
+        { weight: 1, content: ActionRules },
+        { weight: 1, content: ActionSignal },
+        { weight: 1, content: ActionTest },
+    ], { gap: 20 })
+    Callout("Правила + быстрый сигнал + один тест. Всё остальное — улучшения поверх этого.", "Минимальный цикл")
+}
+
 // ── Deck ────────────────────────────────────────────────────────────────────
 
-const deck: DeckConfig = {
-    title: "Агентская разработка: как быстро создавать большие качественные проекты и не сойти с ума",
-    theme: "light",
-    // The physical page fold: a slide leaves as a sheet peeled over a crease
-    // rather than a crossfade, so a lecture reads as pages turning. It is a
-    // shader over a recorded page, hence the longer settle than a fade's.
-    transition: "pageTurn",
-    transitionDurationMs: 900,
-    slides: [
-        {
-            kind: "custom",
-            kicker: "Лекция · агентская разработка",
-            title: "Как бежать быстро и не сломаться",
-            nodes: [
-                { type: "row", gap: 28, children: [
-                    { type: "column", gap: 12, children: [
-                        { type: "text", value: "— Николай Иготти", size: "subtitle" },
-                        { type: "text", value: "Цикл «написал → проверил» как единица работы", size: "caption" },
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/01-cover.jpg", width: 400, height: 298, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Что это такое",
-            title: "Агент — это цикл, не автодополнение",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "bullets", gap: 10, items: [
-                        "Пишет: сотни строк кода за секунды",
-                        "Запускает: компилирует и выполняет сам",
-                        "Проверяет: видит результат, а не код",
-                        "Повторяет: правит и запускает снова",
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/07-fastcycle.jpg", width: 400, height: 298, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Организующая рамка",
-            title: "Три составляющих быстрой разработки",
-            nodes: [
-                { type: "row", gap: 20, children: [
-                    { type: "card", tone: "accent", iconLayers: TOOLS_ICON, title: "Инструменты", children: [
-                        { type: "image", src: "demo/assets/lecture-1/02-tools.jpg", width: 160, height: 160, radius: 16, fit: "cover" },
-                        { type: "text", value: "язык, компилятор, среда", size: "caption" },
-                        { type: "text", value: "дают скорость", size: "caption" },
-                    ]},
-                    { type: "card", tone: "alt", iconLayers: PRINCIPLES_ICON, title: "Принципы", children: [
-                        { type: "image", src: "demo/assets/lecture-1/03-principles.jpg", width: 160, height: 160, radius: 16, fit: "cover" },
-                        { type: "text", value: "стандарты и соглашения", size: "caption" },
-                        { type: "text", value: "дают стабильность", size: "caption" },
-                    ]},
-                    { type: "card", tone: "warn", iconLayers: PROCESSES_ICON, title: "Процессы", children: [
-                        { type: "image", src: "demo/assets/lecture-1/04-processes.jpg", width: 160, height: 160, radius: 16, fit: "cover" },
-                        { type: "text", value: "документация, знания", size: "caption" },
-                        { type: "text", value: "дают темп", size: "caption" },
-                    ]},
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Почему это проблема",
-            title: "Три трудности, которые создаёт агент",
-            nodes: [
-                { type: "row", gap: 16, children: [
-                    { type: "card", tone: "danger", icon: SvgIcons.Clock, title: "Дорогая проверка", children: [
-                        { type: "text", value: "проверка не дешевле генерации", size: "caption" },
-                        { type: "text", value: "значит цикл проверки — короче", size: "caption" },
-                    ]},
-                    { type: "card", tone: "danger", icon: SvgIcons.Error, title: "Вероятностные ошибки", children: [
-                        { type: "text", value: "каждая строка может быть неверной", size: "caption" },
-                        { type: "text", value: "ловить на самом раннем слое", size: "caption" },
-                    ]},
-                    { type: "card", tone: "danger", icon: SvgIcons.Info, title: "Забывание", children: [
-                        { type: "text", value: "контекст короток", size: "caption" },
-                        { type: "text", value: "знания — во внешней памяти", size: "caption" },
-                    ]},
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Сердце агентной разработки",
-            title: "Главный цикл: секунды, не минуты",
-            subtitle: "И снова по кругу: один оборот цикла и есть единица работы агента",
-            nodes: [
-                { type: "row", gap: 20, children: [
-                    { type: "row", gap: 24, children: [
-                        { type: "diagram", height: 320, source: DIAGRAM_LOOP },
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/07-fastcycle.jpg", width: 380, height: 284, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Цикл по цифрам",
-            title: "Полный круг за секунды",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "bullets", gap: 10, items: [
-                        "Генерация кода — 1–5 с (инференс)",
-                        "Компиляция — 0,5–2 с (типы)",
-                        "Запуск — 0,2 с (среда)",
-                        "Проверка — 0,5 с (рендер)",
-                        "Полный цикл — ≈2–8 с",
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/05-loop.jpg", width: 380, height: 284, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Вопрос аудитории",
-            title: "Что труднее: код или задача?",
-            notes: "Пауза, 30 секунд. Правильный ответ — понять задачу: генерация воспроизводит увиденное, а требований и границ модель не знает, пока их не сформулируют. Это и есть причина, по которой в агентной разработке главное — требования, тесты и проверка.",
-            nodes: [
-                { type: "row", gap: 20, children: [
-                    { type: "card", tone: "ok", badge: "A", title: "Написать код", children: [
-                        { type: "text", value: "быстро выдать рабочую версию", size: "caption" },
-                        { type: "text", value: "модель видела миллионы примеров", size: "caption" },
-                        { type: "text", value: "ошибку видно сразу: код не компилируется", size: "caption" },
-                    ]},
-                    { type: "card", tone: "warn", badge: "B", title: "Понять, что именно нужно", children: [
-                        { type: "text", value: "уточнить требования и границы", size: "caption" },
-                        { type: "text", value: "решить, что считается правильным", size: "caption" },
-                        { type: "text", value: "ошибку не видно: код работает, но не то", size: "caption" },
-                    ]},
-                ]},
-                { type: "text", value: "Правильный ответ — понять задачу: требований модель не знает", size: "body" },
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Как это работает",
-            title: "Сходимость вместо идеального шага",
-            notes: "Каждый шаг агента — случайная величина: он почти наверняка не идеален, и это нормально. Смысл не в одном идеальном шаге, а в последовательности, которая сходится: цикл уменьшает расстояние до цели, пока сигнал не перестанет меняться — это и есть неподвижная точка. Ускоряют сходимость двумя способами: короче оборот (сборка, тесты) и меньше оборотов (типы, отладчик, анализатор, размер шага).",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "bullets", gap: 10, items: [
-                        "Каждый шаг почти наверняка не идеален",
-                        "Конец работы — неподвижная точка",
-                        "Оптимизируем скорость, а не красоту шага",
-                        "Короче оборот и меньше оборотов",
-                        "Управляем циклом: сигнал → правка → сигнал",
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/13-fixedpoint.jpg", width: 340, height: 254, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Как ускорить сходимость",
-            title: "Рычаги скорости",
-            notes: "Две группы рычагов. Первая сокращает время оборота, вторая — число оборотов до сходимости. Вторая группа кажется дорогой, но она не ускоряет шаг: она убирает лишние.",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "column", gap: 10, children: [
-                        { type: "text", value: "Короче оборот", size: "subtitle" },
-                        { type: "bullets", gap: 10, items: [
-                            "Быстрая сборка: секунды, не минуты",
-                            "Быстрые тесты: сигнал сразу",
-                        ]},
-                        { type: "text", value: "Меньше оборотов", size: "subtitle" },
-                        { type: "bullets", gap: 10, items: [
-                            "Типы ловят ошибку до запуска",
-                            "Отладчик: состояние, не догадки",
-                        ]},
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/07-fastcycle.jpg", width: 320, height: 238, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Обратная сторона",
-            title: "Когда процесс не сходится",
-            notes: "Четыре режима отказа: расходимость (нет сигнала), блуждание (размытая цель), хаос (крупный шаг), ложная сходимость (мигающий тест). Все четыре лечатся процессом, а не более сильной моделью.",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "bullets", gap: 10, items: [
-                        "Нет сигнала: ошибка копится незаметно",
-                        "Цель размыта: каждая итерация оптимизирует своё",
-                        "Большой шаг: ошибка не локализована",
-                        "Мигающий тест: сходимость недостижима в принципе",
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/14-stuck.jpg", width: 380, height: 284, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "section",
-            num: "1",
-            kicker: "Столп 1",
-            title: "Инструменты",
-            subtitle: "язык · компилятор · среда · отладчик · анализатор · библиотеки",
-            icon: SvgIcons.Settings,
-            theme: "midnight",
-        },
-        {
-            kind: "custom",
-            kicker: "Столп 1 · Инструменты",
-            title: "Что ускоряет агента",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "column", gap: 16, children: [
-                        { type: "row", gap: 16, children: [
-                            { type: "card", tone: "accent", icon: SvgIcons.Check, title: "Язык", children: [
-                                { type: "text", value: "статическая типизация", size: "caption" },
-                            ]},
-                            { type: "card", tone: "accent", icon: SvgIcons.LightningBolt, title: "Сборка", children: [
-                                { type: "text", value: "секунды, не минуты", size: "caption" },
-                            ]},
-                        ]},
-                        { type: "row", gap: 16, children: [
-                            { type: "card", tone: "accent", icon: SvgIcons.Eye, title: "Наблюдаемость", children: [
-                                { type: "text", value: "отладчик и анализатор", size: "caption" },
-                            ]},
-                            { type: "card", tone: "accent", icon: SvgIcons.Star, title: "Библиотеки", children: [
-                                { type: "text", value: "UI, сеть, хранение", size: "caption" },
-                            ]},
-                        ]},
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/02-tools.jpg", width: 320, height: 238, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Инструмент №1",
-            title: "Ошибка видна до запуска",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "column", gap: 10, children: [
-                        { type: "text", value: "Компилятор проверяет типы до запуска:", size: "body" },
-                        { type: "code", language: "ArkTS", code: "const n: number = \"текст\"   // ✗ ошибка типов\nconst n: number = 42         // ✓ корректно" },
-                        { type: "bullets", gap: 10, size: "caption", items: [
-                            "Агенту не нужно запускать код, чтобы узнать о неверном типе",
-                            "Ошибка приходит за секунды и там, где она сделана",
-                        ]},
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/06-types.jpg", width: 320, height: 238, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Инструмент №2",
-            title: "«Глаза и руки» агента",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "bullets", gap: 10, items: [
-                        "Видит отрисованный результат, а не код",
-                        "Ходит по дереву интерфейса и кликает",
-                        "Сравнивает с ожидаемым состоянием",
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/09-inspect.jpg", width: 380, height: 284, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "section",
-            num: "2",
-            kicker: "Столп 2",
-            title: "Принципы",
-            subtitle: "стандарты · соглашения · защитные перила",
-            icon: SvgIcons.Shield,
-            theme: "midnight",
-        },
-        {
-            kind: "custom",
-            kicker: "Столп 2 · Принципы",
-            title: "Защитные перила",
-            nodes: [
-                { type: "row", gap: 16, children: [
-                    { type: "card", tone: "danger", icon: SvgIcons.Shield, title: "Никогда: репозиторий", children: [
-                        { type: "text", value: "публикация в публичный реестр", size: "caption" },
-                        { type: "text", value: "перезапись истории", size: "caption" },
-                        { type: "text", value: "необратимое удаление файлов", size: "caption" },
-                    ]},
-                    { type: "card", tone: "danger", icon: SvgIcons.Lock, title: "Никогда: доступы", children: [
-                        { type: "text", value: "запуск чужого кода с правами", size: "caption" },
-                        { type: "text", value: "правка секретов и ключей", size: "caption" },
-                        { type: "text", value: "«добавить всё» одной командой", size: "caption" },
-                    ]},
-                    { type: "card", tone: "warn", icon: SvgIcons.Bell, title: "Только по просьбе", children: [
-                        { type: "text", value: "публикация артефактов", size: "caption" },
-                        { type: "text", value: "массовая очистка репозитория", size: "caption" },
-                        { type: "text", value: "изменение конфигурации CI", size: "caption" },
-                    ]},
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Принципы · Самопроверка",
-            title: "Самопроверка перед сдачей",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "bullets", gap: 10, items: [
-                        "Чек-лист — по диффу, а не по памяти о правке",
-                        "Ищем: неявные преобразования, два способа для «пусто»",
-                        "Правки генерённого кода",
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/08-debug.jpg", width: 380, height: 284, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "diagram",
-            kicker: "Итог принципов",
-            title: "Эшелонированная оборона: 4 слоя",
-            subtitle: "Чем раньше слой ловит ошибку — тем дешевле исправление",
-            source: DIAGRAM_DEFENSE,
-        },
-        {
-            kind: "section",
-            num: "3",
-            kicker: "Столп 3",
-            title: "Процессы",
-            subtitle: "документация · ревью · CI · тесты · база знаний",
-            icon: SvgIcons.Clock,
-            theme: "midnight",
-        },
-        {
-            kind: "custom",
-            kicker: "Процессы · Тесты",
-            title: "Тесты и CI: предсказуемый агент",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "bullets", gap: 10, items: [
-                        "Тесты пишутся вместе с функцией, а не после",
-                        "Граничные случаи — там, где живут ошибки",
-                        "CI: установка, сборка и тесты на каждом коммите",
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/10-tests.jpg", width: 380, height: 284, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Процессы · Сигнал",
-            title: "Зелёный сигнал должен что-то значить",
-            notes: "Код возврата 0 не значит, что тесты прошли: читай итоговую строку прогона. И тест обязан что-то утверждать — печатающая программа зелёная всегда.",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "bullets", gap: 10, items: [
-                        "Упал — а код возврата 0: читать итоговую строку",
-                        "Тест без проверок: печать «ок» не доказывает",
-                        "Только типичный случай: ошибки живут на краях",
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/15-green.jpg", width: 380, height: 284, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Процессы · CI",
-            title: "Красный пайплайн — это задача",
-            notes: "Зависимости джоб перечисляются полностью: транзитивных в CI не бывает. И публикуй артефакт, а не лог о том, что он собран: пропущенный glob в артефактах выглядит как проблема графа зависимостей, хотя дефект — один glob.",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "column", gap: 14, children: [
-                        { type: "row", gap: 14, children: [
-                            { type: "card", tone: "danger", badge: "1", title: "Упало", children: [
-                                { type: "text", value: "лог, шаг, первая ошибка", size: "caption" },
-                            ]},
-                            { type: "card", tone: "warn", badge: "2", title: "Понять", children: [
-                                { type: "text", value: "воспроизвести локально", size: "caption" },
-                            ]},
-                        ]},
-                        { type: "row", gap: 14, children: [
-                            { type: "card", tone: "warn", badge: "3", title: "Починить", children: [
-                                { type: "text", value: "правкой в репозитории", size: "caption" },
-                            ]},
-                            { type: "card", tone: "ok", badge: "4", title: "Перезапустить", children: [
-                                { type: "text", value: "зелёный не случаен?", size: "caption" },
-                            ]},
-                        ]},
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/16-pipeline.jpg", width: 320, height: 238, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Процессы · Ревью",
-            title: "Ревью: независимые взгляды",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "bullets", gap: 10, items: [
-                        "Четыре роли: архитектура, безопасность, скорость, соглашения",
-                        "У каждого свой чек-лист рядом с определением",
-                        "Одобряет человек: иначе проверка сертифицирует сама себя",
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/11-review.jpg", width: 380, height: 284, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Процессы · Знание",
-            title: "База знаний и память агента",
-            nodes: [
-                { type: "row", gap: 24, children: [
-                    { type: "bullets", gap: 10, items: [
-                        "«Почему» и «как связано» — рядом с кодом",
-                        "Заметки живут между сессиями агента",
-                        "Обновляется вместе с изменением, а не после",
-                    ]},
-                    { type: "image", src: "demo/assets/lecture-1/12-knowledge.jpg", width: 380, height: 284, radius: 16, fit: "cover" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Пример · Как это выглядит",
-            title: "Один конкретный стек как иллюстрация",
-            nodes: [
-                { type: "row", gap: 40, children: [
-                    { type: "column", gap: 12, children: [
-                        { type: "text", value: "Что даёт агенту дружелюбный инструментарий", size: "subtitle" },
-                        { type: "bullets", gap: 10, items: [
-                            "Компиляция и запуск — секунды, не минуты",
-                            "Статические типы ловят ошибку до запуска",
-                            "Тесты без экрана и «глаза» на интерфейс",
-                            "Внешняя память: правила и заметки рядом с кодом",
-                        ]},
-                    ]},
-                    { type: "image", src: "demo/arkui3-qr.png", width: 200, height: 200, caption: "Пример такого стека: gitcode.com/rri_opensource/arkui3" },
-                ]},
-            ],
-        },
-        {
-            kind: "custom",
-            kicker: "Что взять с собой",
-            title: "Чек-лист агентной разработки",
-            subtitle: "Что не проверяется машиной — того не существует",
-            nodes: [
-                { type: "column", gap: 16, children: [
-                    { type: "row", gap: 16, children: [
-                        { type: "card", tone: "accent", icon: SvgIcons.Lock, title: "Правила", children: [
-                            { type: "text", value: "файл, который агент читает до работы", size: "caption" },
-                        ]},
-                        { type: "card", tone: "accent", icon: SvgIcons.Refresh, title: "Короткий цикл", children: [
-                            { type: "text", value: "компиляция и проверка за секунды", size: "caption" },
-                        ]},
-                        { type: "card", tone: "accent", icon: SvgIcons.Shield, title: "Ранние ошибки", children: [
-                            { type: "text", value: "типы и валидация до запуска", size: "caption" },
-                        ]},
-                    ]},
-                    { type: "row", gap: 16, children: [
-                        { type: "card", tone: "ok", icon: SvgIcons.Eye, title: "«Глаза»", children: [
-                            { type: "text", value: "снимок и дерево вместо слепого кода", size: "caption" },
-                        ]},
-                        { type: "card", tone: "ok", icon: SvgIcons.Check, title: "Тесты с кодом", children: [
-                            { type: "text", value: "и запуск на каждом коммите", size: "caption" },
-                        ]},
-                        { type: "card", tone: "ok", icon: SvgIcons.Star, title: "База знаний", children: [
-                            { type: "text", value: "«почему» и «как связано»", size: "caption" },
-                        ]},
-                    ]},
-                ]},
-            ],
-        },
-    ],
+const lectureDeck: PresoDeck = deckOf("Агентская разработка", [
+    slideOf("cover", "Как бежать быстро и не сломаться", CoverPage),
+    slideOf("route", "Четыре остановки", RoutePage, 4,
+        "Показать маршрут и вернуться к нему в конце: каждый блок отвечает на один вопрос."),
+    slideOf("loop", "Агент — это цикл", LoopPage, 0,
+        "Термостат, а не нагреватель: действие → сигнал → правка."),
+    slideOf("pillars", "Три составляющих", PillarsPage, 1,
+        "Три столпа — три условия: скорость, предсказуемость, темп."),
+    slideOf("difficulties", "Три трудности", DifficultiesPage, 1,
+        "Главная — дорогая проверка; она объясняет, почему цикл важнее одной большой попытки."),
+    slideOf("cycle", "Главный цикл", CyclePage, 0,
+        "Один оборот — единица работы агента."),
+    slideOf("numbers", "Цикл по цифрам", NumbersPage, 5,
+        "Порядок величин, не точные замеры: соотношение важнее конкретных секунд."),
+    slideOf("question", "Что труднее", QuestionPage, 0,
+        "Пауза 30 секунд, обсуждение с соседом. Ответ — на следующем слайде."),
+    slideOf("answer", "Ответ: понять задачу", AnswerPage, 0,
+        "Генерация воспроизводит увиденное, а требований и границ модель не знает."),
+    slideOf("convergence", "Сходимость", ConvergencePage, 0,
+        "Каждый шаг неидеален; цель — сходящаяся последовательность."),
+    slideOf("levers", "Рычаги скорости", LeversPage, 0,
+        "Короче оборот и меньше оборотов: две группы рычагов."),
+    slideOf("failures", "Режимы отказа", FailuresPage, 0,
+        "Четыре режима лечатся процессом, а не моделью."),
+    slideOf("tools-section", "Инструменты", ToolsSection),
+    slideOf("tools", "Что ускоряет агента", ToolsPage, 0,
+        "Инструменты — про скорость сигнала, не про «умнее»."),
+    slideOf("types", "Ошибка до запуска", TypesPage, 0,
+        "Типы — проверка орфографии для кода."),
+    slideOf("eyes", "Глаза и руки", EyesPage, 0,
+        "Снимок и дерево — переводчик между кодом и результатом."),
+    slideOf("principles-section", "Принципы", PrinciplesSection),
+    slideOf("guardrails", "Защитные перила", GuardrailsPage, 0,
+        "Перила не замедляют — они делают ошибку обратимой. История про git add -A."),
+    slideOf("selfcheck", "Кто что проверяет", SelfCheckPage, 0,
+        "Машина проверяет видимое; человек — смысл."),
+    slideOf("defense", "Эшелонированная оборона", DefensePage, 0,
+        "Типы — широкий и дешёвый слой; среда выполнения — узкий и дорогой."),
+    slideOf("processes-section", "Процессы", ProcessesSection),
+    slideOf("tests", "Тесты и CI", TestsPage, 0,
+        "Тест — датчик дыма, CI — ночной сторож."),
+    slideOf("green", "Зелёный сигнал", GreenPage, 0,
+        "Тест без assert — датчик, отключённый от провода."),
+    slideOf("pipeline", "Красный пайплайн", PipelinePage, 0,
+        "Чинить причину, а не перезапускать до зелёного."),
+    slideOf("review", "Ревью", ReviewPage, 0,
+        "Второй пилот: один взгляд устаёт и привыкает."),
+    slideOf("knowledge", "База знаний", KnowledgePage, 0,
+        "Контекст — оперативка, заметки — диск."),
+    slideOf("stack", "Пример стека", StackPage, 0,
+        "Важны свойства, а не бренд."),
+    slideOf("checklist", "Чек-лист", ChecklistPage, 0,
+        "Если правило не проверяется машиной, агент его не соблюдает."),
+    slideOf("actions", "Три действия", ActionsPage, 0,
+        "Минимальный цикл: правила + быстрый сигнал + один тест."),
+], SLIDE_WIDE)
+
+export function getPresentationOptions(): PresentationOptions {
+    return {
+        theme: LIGHT_THEME,
+        transition: SlideTransitionKind.PageTurn,
+        transitionDurationMs: 900,
+    }
 }
 
 export function main(): void {
-    runDataDeck(deck)
+    runPresentationCli(lectureDeck, getPresentationOptions())
 }
