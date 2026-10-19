@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ДЗ 1 — Taskboard: пустая строка и неверный счётчик</title>
+<style>
+  :root {
+    --bg: #fcfcfb; --surface: #ffffff; --ink: #1a1a19; --muted: #6b6b66;
+    --border: #e4e4df; --accent: #2a78d6; --code-bg: #f3f3ef;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a19; --surface: #232322; --ink: #f4f4f1; --muted: #a8a8a2;
+      --border: #3a3a37; --accent: #5b9ce8; --code-bg: #2c2c2a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 820px; margin: 0 auto; padding: 48px 24px 96px; }
+  a { color: var(--accent); }
+  .back { font-size: 14px; text-decoration: none; }
+  h1 { font-size: clamp(28px, 4vw, 40px); line-height: 1.18; margin: 18px 0 10px; }
+  .meta { color: var(--muted); font-size: 15px; }
+  h2 { font-size: 23px; margin: 44px 0 12px; }
+  h3 { font-size: 18px; margin: 28px 0 8px; }
+  p, li { max-width: 72ch; }
+  ol, ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  code {
+    background: var(--code-bg); padding: 1px 5px; border-radius: 5px;
+    font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .req {
+    background: var(--surface); border: 1px solid var(--border);
+    border-left: 4px solid var(--accent); border-radius: 10px;
+    padding: 14px 18px; margin: 12px 0;
+  }
+  .req strong { display: inline-block; min-width: 34px; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 16px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .callout {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 20px; margin: 18px 0;
+  }
+  .callout.warn { border-left: 4px solid #fab219; }
+  .callout.bad { border-left: 4px solid #d03b3b; }
+  .links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 26px; }
+  .links a {
+    border: 1px solid var(--border); background: var(--surface); border-radius: 10px;
+    padding: 9px 14px; text-decoration: none; font-size: 15px;
+  }
+  .links a:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">← Материалы курса</a>
+  <h1>ДЗ 1 — Taskboard: пустая строка и неверный счётчик</h1>
+  <p class="meta"><strong>Время:</strong> 90 минут. <strong>Сдаётся:</strong> ссылкой на ваш клон
+  этого репозитория с выполненной работой (или архивом папки).</p>
+
+  <div class="links">
+    <a href="lecture/exports/homework-handout.pdf">Раздатка (PDF)</a>
+    <a href="lecture/exports/agentic-lecture.pdf">Слайды лекции (PDF)</a>
+    <a href="https://github.com/olonho/agentic-class/tree/main/homework/start">Стартер</a>
+    <a href="#change">Изменение требования</a>
+    <a href="loop/">Интерактивная модель цикла</a>
+  </div>
+
+  <h2>Что дано</h2>
+  <ul>
+    <li><code>src/tasks.ts</code> — логика доски, <code>src/App.tsx</code> — экран,
+        <code>src/tasks.test.ts</code> — два теста, которые проходят.</li>
+    <li><code>ISSUE-7.md</code> — отчёт пользователя.</li>
+    <li><a href="https://github.com/olonho/agentic-class/blob/main/homework/start/AGENTS.md"><code>AGENTS.md</code></a>
+        — команды запуска и правила для агента.</li>
+  </ul>
+
+  <h2>Подготовка (5 минут)</h2>
+  <p>Нужен Node.js 20+. Стартер — в публичном репозитории: склонируйте его
+  (<code>git clone https://github.com/olonho/agentic-class</code>) или скачайте папку
+  <code>homework/start</code> архивом.</p>
+  <pre><code>npm install    # зависимости
+npm test       # два стартовых теста, оба зелёные
+npm run dev    # dev-сервер; URL печатает Vite, обычно http://localhost:5173</code></pre>
+  <p><code>npm run build</code> — проверка типов (<code>tsc --noEmit</code>) и
+  production-сборка. Подробности и правила для агента — в <code>AGENTS.md</code>.</p>
+
+  <h2>Требования (обязательны все)</h2>
+  <div class="req"><strong>R1.</strong> По issue #7: переименование в строку из одних пробельных
+    символов отклоняется, остаётся прежнее название; пробелы по краям обрезаются. Пробельные:
+    пробел, табуляция, неразрывный пробел U+00A0.</div>
+  <div class="req"><strong>R2.</strong> Доска не показывает пустые строки — <strong>включая строки,
+    сохранённые до исправления</strong> (в данных такая уже есть).</div>
+  <div class="req"><strong>R3.</strong> Счётчик «Открытых» считает так же, как список: пустая
+    строка не считается открытой задачей.</div>
+  <div class="req"><strong>R4.</strong> На каждое из R1–R3 — тест. Тесты пишете вы,
+    <strong>до</strong> того как покажете задачу агенту.</div>
+  <p>Требования R2–R3 в issue не упомянуты: их нужно найти самому, проверив весь экран, а не только
+  отчёт.</p>
+
+  <h2>Ход работы</h2>
+  <ol>
+    <li><strong><code>SPEC.md</code> — без ИИ (15 мин).</strong> Разделы: Requirement ·
+      Acceptance tests (по одному на R1–R3; R4 — это сами тесты) · Non-goals · Files in scope ·
+      Definition of done.</li>
+    <li><strong>Тесты первыми (20 мин).</strong> В <code>src/tasks.test.ts</code> или отдельном
+      файле. Агент их <strong>не увидит</strong>.</li>
+    <li><strong>Агент (20 мин).</strong> Дайте ему только <code>SPEC.md</code> и промпт:
+      <div class="callout">Прочитай SPEC.md и реализуй задачу точно по нему. Меняй только
+        <code>src/tasks.ts</code> и <code>src/App.tsx</code>. После изменений запусти
+        <code>npm test</code> и покажи результат.</div>
+      Код не правите. Каждое вмешательство — строка в <code>INTERVENTIONS.md</code>
+      (<code>время · что · зачем</code>).</li>
+    <li><strong>Проверка (10 мин).</strong> <code>mkdir -p evidence</code>; <code>npm test</code>;
+      <code>npm run build</code>; <code>npm run dev</code> и скриншот в <code>evidence/app.png</code>;
+      <code>git diff --stat</code>.</li>
+    <li><strong>Красный прогон (10 мин).</strong> По очереди сломайте три места и на каждое покажите
+      красный тест:
+      <ul>
+        <li>(а) обрезание пробелов при создании в <code>createTask</code>;</li>
+        <li>(б) валидацию при переименовании в <code>renameTask</code>;</li>
+        <li>(в) обработку унаследованной пустой строки (R2).</li>
+      </ul>
+      Каждую поломку — отдельным блоком в <code>evidence/red.txt</code> с меткой
+      <code>(а)</code>, <code>(б)</code>, <code>(в)</code>. Лог удобно собирать так:
+      <code>npm test 2>&amp;1 | tee -a evidence/red.txt</code>, подписывая блок.</li>
+    <li><strong><code>REPORT.md</code> (10 мин).</strong> На каждый провал — строка
+      <code>&lt;категория&gt;: &lt;что произошло&gt; → &lt;правило&gt;</code> с
+      <strong>уликой</strong> (строка транскрипта, хунк диффа или имя теста). Правило — тест,
+      правило линтера или строка <code>AGENTS.md</code>; оно должно ловить <strong>вариант</strong>
+      того же провала, а не только тот случай, который вы уже видели.</li>
+    <li><strong><code>REFLECTION.md</code> (5 мин, без ИИ).</strong> Пять строк: что агент понял не
+      так и какая строка спеки это вызвала; какой ваш сигнал оказался ложным и что вы им заменили;
+      какое правило вы добавили и какой провал оно закрывает.</li>
+  </ol>
+
+  <h2 id="change">Изменение требования (после шага 5)</h2>
+  <div class="callout warn">
+    После того как шаг 5 сдан, требование меняется: <strong>название из одного символа U+200B
+    (zero-width space) тоже считается пустым</strong>. Обновите <code>SPEC.md</code>, тесты и
+    реализацию тем же циклом (спека → агент → проверка → красный прогон на новом варианте).
+  </div>
+
+  <h2>Оценка — 6 баллов</h2>
+  <table>
+    <thead><tr><th>Балл</th><th>За что</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>SPEC.md</code> — пять разделов, написан без ИИ</td></tr>
+      <tr><td>1</td><td>тесты на R1–R4 в репозитории, зелёные</td></tr>
+      <tr><td>1</td><td><code>evidence/app.png</code> + <code>evidence/red.txt</code> с тремя блоками (а), (б), (в)</td></tr>
+      <tr><td>1</td><td><code>INTERVENTIONS.md</code> — все вмешательства</td></tr>
+      <tr><td>1</td><td><code>REPORT.md</code> — таксономия с уликами + правило, ловящее вариант</td></tr>
+      <tr><td>1</td><td><code>REFLECTION.md</code> — пять строк</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Скрытый набор тестов</strong> преподавателя — обязательный гейт: если он не проходит,
+    работа не зачтена. Команду запуска и сами тесты преподаватель не выдаёт.
+  </div>
+  <div class="callout">
+    <strong>Защита, 3 минуты:</strong> по команде преподавателя сломать одно из трёх мест в вашей
+    реализации и показать, что краснеет; объяснить, почему зелёный значит «проверено».
+  </div>
+
+  <h2>Не зачтено</h2>
+  <ul>
+    <li><code>SPEC.md</code> писал ИИ; тесты писал агент.</li>
+    <li>В <code>red.txt</code> нет одной из трёх поломок, или после поломки тесты остались зелёными.</li>
+    <li>Правило не ловит вариант провала.</li>
+  </ul>
+</main>
+</body>
+</html>
