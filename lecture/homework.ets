@@ -30,7 +30,7 @@ const deck: DeckConfig = {
     slides: [
         {
             kind: "custom",
-            kicker: "Домашнее задание 1 · 90 минут",
+            kicker: "Домашнее задание 1 · 90–100 минут",
             title: "Управление агентом",
             subtitle: "Сдаётся ссылкой на ваш клон репозитория; дедлайн — начало следующего занятия",
             nodes: [
@@ -46,7 +46,7 @@ const deck: DeckConfig = {
             nodes: [
                 { type: "column", gap: 10, children: [
                     { type: "text", value: "Воспроизведение: открыть задачу → стереть название до пробелов → сохранить.", size: "body" },
-                    { type: "text", value: "Фактически: задача остаётся в списке; фильтр «Открытые» показывает пустую строку.", size: "body" },
+                    { type: "text", value: "Фактически: задача остаётся в списке; пустая строка видна в «Открытых» и попадает в счётчик.", size: "body" },
                     { type: "text", value: "Ожидалось: не сохранять и показать «Название не может быть пустым».", size: "body" },
                     { type: "text", value: "Границы: пробел, табуляция, неразрывный пробел U+00A0.", size: "body" },
                 ]},
@@ -58,16 +58,16 @@ const deck: DeckConfig = {
             kicker: "Подготовка · 5 минут",
             title: "Стартер: Vite + React + TypeScript + Vitest",
             nodes: [
-                { type: "code", code: "npm install    # зависимости\nnpm test       # 2 стартовых теста, зелёные\nnpm run dev    # Vite, обычно http://localhost:5173\nnpm run build  # tsc --noEmit + production-сборка" },
+                { type: "code", code: "cd homework/start   # если клонировали весь репозиторий\nnpm install    # зависимости\nnpm test       # 2 стартовых теста, зелёные\nnpm run dev    # Vite, обычно http://localhost:5173\nnpm run build  # tsc --noEmit + production-сборка" },
                 { type: "text", value: "Нужен Node.js 20+. Команды и правила для агента — в AGENTS.md.", size: "caption" },
             ],
         },
         {
             kind: "stats",
             kicker: "Как устроено задание",
-            title: "90 минут, шесть баллов, один агент",
+            title: "90–100 минут, шесть баллов, один агент",
             stats: [
-                { value: "90", label: "минут на всё" },
+                { value: "90–100", label: "минут на всё, с подготовкой" },
                 { value: "4", label: "требования R1–R4" },
                 { value: "3+1", label: "красных прогона: (а)(б)(в) и (г)" },
                 { value: "1", label: "worker-агент, только со SPEC" },
@@ -122,7 +122,7 @@ const deck: DeckConfig = {
             kicker: "Шаг 4 · 10 минут",
             title: "Проверяете сами, не по слову агента",
             nodes: [
-                { type: "code", code: "mkdir -p evidence\nnpm test                 # должно быть зелёно\nnpm run build            # типы и сборка\ngit diff --stat          # только src/tasks.ts и src/App.tsx\nnpm run dev              # скриншот в evidence/app.png" },
+                { type: "code", code: "mkdir -p evidence\nnpm test                 # должно быть зелёно\nnpm run build            # типы и сборка\ngit diff --stat          # src/tasks.ts, src/App.tsx и ваши тесты\nnpm run dev              # скриншот в evidence/app.png" },
                 { type: "text", value: "На скриншоте: «Открытых: 1», пустых строк нет. Если тесты не зелёные, шаг не зачтён.", size: "caption" },
             ],
         },
@@ -190,7 +190,7 @@ const deck: DeckConfig = {
             headers: ["Категория", "Что произошло", "Правило"],
             rows: [
                 ["Проверка", "Агент сдал зелёный trim()", "таблица классов: пробел, tab, NBSP, U+200B"],
-                ["Артефакт", "Правки вне разрешённых файлов", "lint: только src/tasks.ts и src/App.tsx"],
+                ["Артефакт", "Правки вне разрешённых файлов", "AGENTS.md: только src/tasks.ts и src/App.tsx"],
                 ["Контекст", "Агент не знал про R2", "в SPEC — фильтр «Открытые» и унаследованная строка"],
             ],
         },

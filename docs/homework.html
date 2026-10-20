@@ -61,7 +61,8 @@
 <main>
   <a class="back" href="./">← Материалы курса</a>
   <h1>ДЗ 1 — Taskboard: пустая строка и неверный счётчик</h1>
-  <p class="meta"><strong>Время:</strong> 90 минут. <strong>Сдаётся:</strong> ссылкой на ваш клон
+  <p class="meta"><strong>Время:</strong> 90–100 минут (включая подготовку и цикл изменения).
+  <strong>Дедлайн:</strong> начало следующего занятия. <strong>Сдаётся:</strong> ссылкой на ваш клон
   этого репозитория с выполненной работой (или архивом папки).</p>
 
   <div class="links">
@@ -76,7 +77,8 @@
   <ul>
     <li><code>src/tasks.ts</code> — логика доски, <code>src/App.tsx</code> — экран,
         <code>src/tasks.test.ts</code> — два теста, которые проходят.</li>
-    <li><code>ISSUE-7.md</code> — отчёт пользователя.</li>
+    <li><code>ISSUE-7.md</code> — отчёт пользователя
+        (<a href="https://github.com/olonho/agentic-class/blob/main/homework/start/ISSUE-7.md">открыть</a>).</li>
     <li><a href="https://github.com/olonho/agentic-class/blob/main/homework/start/AGENTS.md"><code>AGENTS.md</code></a>
         — команды запуска и правила для агента.</li>
   </ul>
@@ -84,8 +86,10 @@
   <h2>Подготовка (5 минут)</h2>
   <p>Нужен Node.js 20+. Стартер — в публичном репозитории: склонируйте его
   (<code>git clone https://github.com/olonho/agentic-class</code>) или скачайте папку
-  <code>homework/start</code> архивом.</p>
-  <pre><code>npm install    # зависимости
+  <code>homework/start</code> архивом. Если нужен только стартер:
+  <code>git clone --filter=blob:none --sparse … &amp;&amp; git sparse-checkout set homework/start</code>.</p>
+  <pre><code>cd homework/start   # если клонировали весь репозиторий
+npm install    # зависимости
 npm test       # два стартовых теста, оба зелёные
 npm run dev    # dev-сервер; URL печатает Vite, обычно http://localhost:5173</code></pre>
   <p><code>npm run build</code> — проверка типов (<code>tsc --noEmit</code>) и
@@ -119,7 +123,7 @@ npm run dev    # dev-сервер; URL печатает Vite, обычно http:
       (<code>время · что · зачем</code>).</li>
     <li><strong>Проверка (10 мин).</strong> <code>mkdir -p evidence</code>; <code>npm test</code>;
       <code>npm run build</code>; <code>npm run dev</code> и скриншот в <code>evidence/app.png</code>;
-      <code>git diff --stat</code>.</li>
+      <code>git diff --stat</code> (в диффе будут и ваши тесты — это нормально).</li>
     <li><strong>Красный прогон (10 мин).</strong> По очереди сломайте три места и на каждое покажите
       красный тест:
       <ul>
@@ -144,7 +148,8 @@ npm run dev    # dev-сервер; URL печатает Vite, обычно http:
   <div class="callout warn">
     После того как шаг 5 сдан, требование меняется: <strong>название из одного символа U+200B
     (zero-width space) тоже считается пустым</strong>. Обновите <code>SPEC.md</code>, тесты и
-    реализацию тем же циклом (спека → агент → проверка → красный прогон на новом варианте).
+    реализацию тем же циклом (спека → агент → проверка → красный прогон на новом варианте —
+    отдельный блок (г)).
   </div>
 
   <h2>Оценка — 6 баллов</h2>
@@ -152,7 +157,7 @@ npm run dev    # dev-сервер; URL печатает Vite, обычно http:
     <thead><tr><th>Балл</th><th>За что</th></tr></thead>
     <tbody>
       <tr><td>1</td><td><code>SPEC.md</code> — пять разделов, написан без ИИ</td></tr>
-      <tr><td>1</td><td>тесты на R1–R4 в репозитории, зелёные</td></tr>
+      <tr><td>1</td><td>тесты на R1–R3 в репозитории, зелёные (R4 — сами тесты)</td></tr>
       <tr><td>1</td><td><code>evidence/app.png</code> + <code>evidence/red.txt</code> с тремя блоками (а), (б), (в)</td></tr>
       <tr><td>1</td><td><code>INTERVENTIONS.md</code> — все вмешательства</td></tr>
       <tr><td>1</td><td><code>REPORT.md</code> — таксономия с уликами + правило, ловящее вариант</td></tr>
@@ -163,6 +168,11 @@ npm run dev    # dev-сервер; URL печатает Vite, обычно http:
   <div class="callout">
     <strong>Скрытый набор тестов</strong> преподавателя — обязательный гейт: если он не проходит,
     работа не зачтена. Команду запуска и сами тесты преподаватель не выдаёт.
+  </div>
+  <div class="callout">
+    <strong>Бонус (+1):</strong> два прогона одной задачи — без SPEC и с SPEC. Таблица: время до
+    первой сдачи · ходы · вмешательства · дефекты при приёмке; вывод одной фразой, что дала
+    спецификация.
   </div>
   <div class="callout">
     <strong>Защита, 3 минуты:</strong> по команде преподавателя сломать одно из трёх мест в вашей

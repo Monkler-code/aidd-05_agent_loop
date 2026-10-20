@@ -109,6 +109,9 @@ export default function App() {
         <div className="viz-root">
             <header className="top">
                 <div>
+                    <a href="../" style={{ fontSize: 14, color: "var(--muted)", textDecoration: "none" }}>
+                        ← Материалы курса
+                    </a>
                     <h1>Агентный цикл</h1>
                     <p className="sub">
                         Один и тот же агент, одна и та же задача. Меняется только обратная связь.
