@@ -23,17 +23,22 @@ export function App() {
 
     function add() {
         const next = createTask(tasks.length + 1, draft)
-        if (next !== undefined) setTasks([...tasks, next])
+        if (next !== undefined) {
+            setTasks([...tasks, next])
+        } else {
+            window.alert("Некорректное название задачи")
+        }
         setDraft("")
     }
 
     function rename(task: Task) {
         const title = window.prompt("Название", task.title)
         if (title == null) return
-        setTasks(renameTask(tasks, task.id, title))
         if (isBlankTitle(title)) {
             window.alert("Некорректное название задачи")
+            return
         }
+        setTasks(renameTask(tasks, task.id, title))
     }
 
     const shown = visibleTasks(tasks, filter)

@@ -47,6 +47,18 @@ describe("R1 — переименование задач", () => {
             result.find((task) => task.id === originalTask.id)?.title,
         ).toBe("Купить хлеб")
     })
+
+    it("прогон (г): отклоняет переименование в U+200B", () => {
+    const result = renameTask(
+        [originalTask],
+        originalTask.id,
+        "\u200B",
+    )
+
+    expect(
+        result.find((task) => task.id === originalTask.id)?.title,
+    ).toBe("Купить хлеб")
+    })
 })
 
 describe("R2 — отображение задач", () => {
@@ -68,3 +80,4 @@ describe("R3 — счётчик открытых задач", () => {
         expect(openCount(seedTasks)).toBe(1)
     })
 })
+

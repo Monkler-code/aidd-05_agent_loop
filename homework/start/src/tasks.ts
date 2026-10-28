@@ -18,7 +18,7 @@ export const seedTasks: Task[] = [
 
 /** Обрезает пробелы, табуляции и неразрывные пробелы U+00A0 по краям. */
 export function trimTitle(title: string): string {
-    return title.replace(/^[ \t\u00A0]+|[ \t\u00A0]+$/g, "")
+    return title.replace(/^[\s\u00A0\u200B]+|[\s\u00A0\u200B]+$/g, "")
 }
 
 /** Доска считает название без непробельных символов отсутствующим названием. */
@@ -47,10 +47,10 @@ export function renameTask(tasks: Task[], id: number, title: string): Task[] {
 }
 
 export function visibleTasks(tasks: Task[], filter: Filter): Task[] {
-    //const nonBlank = tasks.filter((task) => !isBlankTitle(task.title))
-    if (filter === "open") return tasks.filter((task) => !task.done)
-    if (filter === "done") return tasks.filter((task) => task.done)
-    return tasks
+    const nonBlank = tasks.filter((task) => !isBlankTitle(task.title))
+    if (filter === "open") return nonBlank.filter((task) => !task.done)
+    if (filter === "done") return nonBlank.filter((task) => task.done)
+    return nonBlank
 }
 
 export function openCount(tasks: Task[]): number {
