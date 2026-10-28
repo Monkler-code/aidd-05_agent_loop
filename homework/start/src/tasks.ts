@@ -47,10 +47,10 @@ export function renameTask(tasks: Task[], id: number, title: string): Task[] {
 }
 
 export function visibleTasks(tasks: Task[], filter: Filter): Task[] {
-    const nonBlank = tasks.filter((task) => !isBlankTitle(task.title))
-    if (filter === "open") return nonBlank.filter((task) => !task.done)
-    if (filter === "done") return nonBlank.filter((task) => task.done)
-    return nonBlank
+    //const nonBlank = tasks.filter((task) => !isBlankTitle(task.title))
+    if (filter === "open") return tasks.filter((task) => !task.done)
+    if (filter === "done") return tasks.filter((task) => task.done)
+    return tasks
 }
 
 export function openCount(tasks: Task[]): number {
