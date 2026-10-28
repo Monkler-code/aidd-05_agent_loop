@@ -13,11 +13,11 @@ Non-goals:
 5. Не изменяй и не добавляй функции, если это не влияет на проверку Acceptance tests
 
 Files in scope:
-Разрешено менять и читать только файлы src/tasks.ts, src/App.tsx
+Разрешено менять и читать только файлы src/tasks.ts, src/App.tsx, INTERVENTIONS.md
 
 Defenition of done:
 1. Автоматические тесты, запускаемые с помощью команды npm test завершаются успешно
 2. Команда npm run build выполняется без ошибок
 3. Acceptance tests удовлетворены
-4. Изменения ограничены файлами src/tasks.ts, src/App.tsx
-5. Никакие файлыЮ кроме SPEC.md, src/tasks.ts, src/App.tsx не были прочитаны
+4. Изменения ограничены файлами src/tasks.ts, src/App.tsx, INTERVENTIONS.md
+5. Никакие файлы, кроме SPEC.md, src/tasks.ts, src/App.tsx, INTERVENTIONS.md не были прочитаны

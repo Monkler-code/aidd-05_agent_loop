@@ -16,9 +16,14 @@ export const seedTasks: Task[] = [
     { id: 3, title: "   ", done: false },
 ]
 
+/** Обрезает пробелы, табуляции и неразрывные пробелы U+00A0 по краям. */
+export function trimTitle(title: string): string {
+    return title.replace(/^[ \t\u00A0]+|[ \t\u00A0]+$/g, "")
+}
+
 /** Доска считает название без непробельных символов отсутствующим названием. */
 export function isBlankTitle(title: string): boolean {
-    return title.trim().length === 0
+    return trimTitle(title).length === 0
 }
 
 /**
@@ -26,27 +31,28 @@ export function isBlankTitle(title: string): boolean {
  * переименования ниже: старая форма сохраняла название без проверки.
  */
 export function createTask(id: number, title: string): Task | undefined {
-    const trimmed = title.trim()
+    const trimmed = trimTitle(title)
     if (trimmed.length === 0) return undefined
     return { id, title: trimmed, done: false }
 }
 
-/** Переименование существующей задачи. Проверки здесь нет — issue #7. */
+/**
+ * Переименование существующей задачи. Пустые названия (из пробелов, табуляций
+ * и неразрывных пробелов) отклоняются — возвращается исходный список без изменений.
+ */
 export function renameTask(tasks: Task[], id: number, title: string): Task[] {
-    return tasks.map((task) => (task.id === id ? { ...task, title } : task))
+    const trimmed = trimTitle(title)
+    if (trimmed.length === 0) return tasks
+    return tasks.map((task) => (task.id === id ? { ...task, title: trimmed } : task))
 }
 
 export function visibleTasks(tasks: Task[], filter: Filter): Task[] {
-    if (filter === "open") return tasks.filter((task) => !task.done)
-    if (filter === "done") return tasks.filter((task) => task.done)
-    return tasks
+    const nonBlank = tasks.filter((task) => !isBlankTitle(task.title))
+    if (filter === "open") return nonBlank.filter((task) => !task.done)
+    if (filter === "done") return nonBlank.filter((task) => task.done)
+    return nonBlank
 }
 
-/**
- * Счётчик в шапке. Он считает все открытые строки — включая унаследованную
- * пустую, поэтому показывает 2, хотя на доске одна настоящая открытая задача
- * и одна пустая строка.
- */
 export function openCount(tasks: Task[]): number {
-    return tasks.filter((task) => !task.done).length
+    return tasks.filter((task) => !task.done && !isBlankTitle(task.title)).length
 }
